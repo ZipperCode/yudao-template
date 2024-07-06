@@ -1,0 +1,143 @@
+version: "3.4"
+
+name: yudao-system
+
+networks:
+  yudao:
+    driver: bridge
+
+services:
+  yudao-mysql:
+    container_name: yudao-mysql
+    image: yudao-mysql
+    build:
+      context: ./mysql
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3308:3306"
+    command: [
+      # mysql初始化参数
+      'mysqld',
+      '--innodb-buffer-pool-size=80M',
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--default-time-zone=+8:00',
+      '--lower-case-table-names=1'
+    ]
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-yudao_mini}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-zzp@949389}
+      MYSQL_USER: ${MYSQL_USER:-zipper}
+      MYSQL_PASSWORD: ${MYSQL_USER_PASSWORD:-zzp@949389}
+    volumes:
+      # 映射目录
+      - ./mysql/conf:/etc/mysql/conf.d
+      - ./mysql/logs:/logs
+      # 持久化数据
+      - ./mysql/data:/var/lib/mysql:rw
+      - ./mysql/yudao-mini.sql:/docker-entrypoint-initdb.d/yudao-mini.sql:ro
+    networks:
+      - yudao
+
+  yudao-redis:
+    container_name: yudao-redis
+    image: yudao-redis
+    build:
+      context: ./redis
+    restart: unless-stopped
+    ports:
+      - "6378:6379"
+    volumes:
+      - ./redis/redis.conf:/home/yudao/redis/redis.conf
+      - ./redis/data:/data:rw
+    command: redis-server /home/yudao/redis/redis.conf
+    networks:
+      - yudao
+
+  yudao-server:
+    container_name: yudao-server
+    build:
+      context: ./server
+    image: yudao-server
+    restart: unless-stopped
+    ports:
+      - "48080:48080"
+    environment:
+      # https://github.com/polovyivan/docker-pass-configs-to-container
+#      SPRING_PROFILES_ACTIVE: local
+      JAVA_OPTS:
+        ${JAVA_OPTS:-
+          -Xms512m
+          -Xmx512m
+          -Djava.security.egd=file:/dev/./urandom
+        }
+      ARGS:
+        --spring.datasource.dynamic.datasource.master.url=${MASTER_DATASOURCE_URL:-jdbc:mysql://yudao-mysql:3306/yudao-mini?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true}
+        --spring.datasource.dynamic.datasource.master.username=${MASTER_DATASOURCE_USERNAME:-root}
+        --spring.datasource.dynamic.datasource.master.password=${MASTER_DATASOURCE_PASSWORD:-zzp@949389}
+        --spring.datasource.dynamic.datasource.slave.url=${SLAVE_DATASOURCE_URL:-jdbc:mysql://yudao-mysql:3306/yudao-mini?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true}
+        --spring.datasource.dynamic.datasource.slave.username=${SLAVE_DATASOURCE_USERNAME:-root}
+        --spring.datasource.dynamic.datasource.slave.password=${SLAVE_DATASOURCE_PASSWORD:-zzp@949389}
+        --spring.redis.host=${REDIS_HOST:-yudao-redis}
+        --user.home=/home/yudao
+    volumes:
+      - ./server:/home/yudao:rw
+      - ./server/yudao-server.jar:/home/yudao/yudao-server.jar
+    depends_on:
+      - yudao-mysql
+      - yudao-redis
+    networks:
+      - yudao
+  yudao-nginx:
+    container_name: yudao-nginx
+    image: yudao-nginx
+    build:
+      context: ./nginx
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/html:/home/yudao/www
+      - ./nginx/logs:/var/log/nginx
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - yudao-server
+    networks:
+      - yudao
+
+#  yudao-nginx:
+#    container_name: yudao-nginx
+#    image: yudao-nginx
+#    build:
+#      context: ./nginx
+#      args:
+#        NODE_ENV:
+#          # 编译环境
+#          NODE_ENV=${NODE_ENV:-production}
+#          # 名称
+#          VITE_APP_TITLE=${VITE_APP_TITLE:-芋道管理系统}
+#          # 接口地址
+#          VITE_BASE_URL=${VITE_BASE_URL:-/admin-api}
+#          # 应用前缀，base
+#          VITE_BASE_PATH=${VITE_BASE_PATH:-/}
+#          # 是否开启租户模式
+#          VITE_APP_TENANT_ENABLE=${VITE_APP_TENANT_ENABLE:-false}
+#          # 是否启用验证码
+#          VITE_APP_CAPTCHA_ENABLE=${VITE_APP_CAPTCHA_ENABLE:-true}
+#          # 是否开启文档提示
+#          VITE_APP_DOCALERT_ENABLE=${VITE_APP_DOCALERT_ENABLE:-false}
+#          # 文件上传类型
+#          VITE_UPLOAD_TYPE=${VITE_UPLOAD_TYPE:-server}
+#          # 文件上传地址
+#          VITE_UPLOAD_URL=${VITE_UPLOAD_URL:-http://yudao-server:48080/admin-api/infra/file/upload}
+#    ports:
+#      - "8000:80"
+#    volumes:
+#      - ./nginx/html:/home/yudao/www
+#      - ./nginx/logs:/var/log/nginx
+#      - ./nginx/conf.d:/etc/nginx/conf.d
+#    depends_on:
+#      - yudao_server
+#    networks:
+#      - yudao

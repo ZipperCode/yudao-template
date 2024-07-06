@@ -1,0 +1,113 @@
+
+server:
+  port: 48080
+
+--- #################### 数据库相关配置 ####################
+spring:
+  # 数据源配置项
+  autoconfigure:
+    exclude:
+      - com.alibaba.druid.spring.boot.autoconfigure.DruidDataSourceAutoConfigure # 排除 Druid 的自动配置，使用 dynamic-datasource-spring-boot-starter 配置多数据源
+      - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration # 默认 local 环境，不开启 Quartz 的自动配置
+      - de.codecentric.boot.admin.server.config.AdminServerAutoConfiguration # 禁用 Spring Boot Admin 的 Server 的自动配置
+      - de.codecentric.boot.admin.server.ui.config.AdminServerUiAutoConfiguration # 禁用 Spring Boot Admin 的 Server UI 的自动配置
+      - de.codecentric.boot.admin.client.config.SpringBootAdminClientAutoConfiguration # 禁用 Spring Boot Admin 的 Client 的自动配置
+  datasource:
+    druid: # Druid 【监控】相关的全局配置
+      web-stat-filter:
+        enabled: true
+      stat-view-servlet:
+        enabled: true
+        allow: # 设置白名单，不填则允许所有访问
+        url-pattern: /druid/*
+        login-username: # 控制台管理用户名和密码
+        login-password:
+      filter:
+        stat:
+          enabled: true
+          log-slow-sql: true # 慢 SQL 记录
+          slow-sql-millis: 100
+          merge-sql: true
+        wall:
+          config:
+            multi-statement-allow: true
+    dynamic: # 多数据源配置
+      druid: # Druid 【连接池】相关的全局配置
+        initial-size: 1 # 初始连接数
+        min-idle: 1 # 最小连接池数量
+        max-active: 20 # 最大连接池数量
+        max-wait: 600000 # 配置获取连接等待超时的时间，单位：毫秒
+        time-between-eviction-runs-millis: 60000 # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位：毫秒
+        min-evictable-idle-time-millis: 300000 # 配置一个连接在池中最小生存的时间，单位：毫秒
+        max-evictable-idle-time-millis: 900000 # 配置一个连接在池中最大生存的时间，单位：毫秒
+        validation-query: SELECT 1 FROM DUAL # 配置检测连接是否有效
+        test-while-idle: true
+        test-on-borrow: false
+        test-on-return: false
+      primary: master
+      datasource:
+        master:
+          # MySQL Connector/J 8.X 连接的示例
+          url: ${MASTER_DATASOURCE_URL:-jdbc:mysql://yudao-mysql:3306/yudao_mini?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&nullCatalogMeansCurrent=true}
+          username: ${MASTER_DATASOURCE_USERNAME:-root}
+          password: ${MASTER_DATASOURCE_PASSWORD:-zzp@949389}
+  redis:
+    host: ${REDIS_HOST:-127.0.0.1} # 地址
+    port: 6379 # 端口
+    database: 0 # 数据库索引
+    password: ${REDIS_PASSWORD:-zzp@949389}
+
+
+--- #################### 定时任务相关配置 ####################
+
+# Quartz 配置项，对应 QuartzProperties 配置类
+spring:
+  quartz:
+    # 本地开发环境，尽量不要开启 Job
+    auto-startup: true
+    # Scheduler 名字。默认为 schedulerName
+    scheduler-name: schedulerName
+    # Job 存储器类型。默认为 memory 表示内存，可选 jdbc 使用数据库。
+    job-store-type: jdbc
+    # 应用关闭时，是否等待定时任务执行完成。默认为 false ，建议设置为 true
+    wait-for-jobs-to-complete-on-shutdown: true
+    # 添加 Quartz Scheduler 附加属性，更多可以看 http://www.quartz-scheduler.org/documentation/2.4.0-SNAPSHOT/configuration.html 文档
+    properties:
+      org:
+        quartz:
+          # Scheduler 相关配置
+          scheduler:
+            instanceName: schedulerName
+            instanceId: AUTO # 自动生成 instance ID
+          # JobStore 相关配置
+          jobStore:
+            # JobStore 实现类。可见博客：https://blog.csdn.net/weixin_42458219/article/details/122247162
+            class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
+            # 是集群模式
+            isClustered: false
+            # 集群检查频率，单位：毫秒。默认为 15000，即 15 秒
+            clusterCheckinInterval: 15000
+            # misfire 阀值，单位：毫秒。
+            misfireThreshold: 60000
+          # 线程池相关配置
+          threadPool:
+            # 线程池大小。默认为 10 。
+            threadCount: 25
+            # 线程优先级
+            threadPriority: 5
+            # 线程池类型
+            class: org.quartz.simpl.SimpleThreadPool
+    # 使用 JDBC 的 JobStore 的时候，JDBC 的配置
+    jdbc:
+      # 是否自动使用 SQL 初始化 Quartz 表结构。这里设置成 never ，我们手动创建表结构。
+      initialize-schema: NEVER
+--- #################### 监控相关配置 ####################
+
+# Actuator 监控端点的配置项
+management:
+  endpoints:
+    web:
+      base-path: /prod_actuator # Actuator 提供的 API 接口的根目录。默认为 /actuator
+      exposure:
+        # 需要开放的端点。默认值只打开 health 和 info 两个端点。通过设置 * ，可以开放所有端点。
+        include: 'health,info'
